@@ -8,7 +8,7 @@ import datetime
 import requests
 import re
 
-# --- ฟังก์ชันต่างๆ (คงเดิม) ---
+# --- ฟังก์ชันต่างๆ ---
 def create_kml(df, geometry):
     kml_header = '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n<name>Milk Run Route</name>\n'
     kml_footer = '</Document>\n</kml>'
@@ -19,6 +19,17 @@ def create_kml(df, geometry):
     coords_str = " ".join([f"{lon},{lat},0" for lat, lon in geometry])
     kml_body += f"<Placemark><name>Route Path</name><LineString><coordinates>{coords_str}</coordinates></LineString></Placemark>\n"
     return kml_header + kml_body + kml_footer
+
+def create_gpx(df, geometry):
+    gpx = '<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="MilkRunApp">\n'
+    for i in range(len(df) - 1):
+        row = df.iloc[i]
+        gpx += f'<wpt lat="{row["Lat"]}" lon="{row["Lon"]}"><name>{i}: {row["ชื่อสถานที่"]}</name></wpt>\n'
+    gpx += '<trk><name>Milk Run Route Path</name><trkseg>\n'
+    for lat, lon in geometry:
+        gpx += f'<trkpt lat="{lat}" lon="{lon}"></trkpt>\n'
+    gpx += '</trkseg></trk>\n</gpx>'
+    return gpx
 
 def get_auto_fuel_prices():
     return {"Diesel": 32.94, "Gasohol 95": 36.55, "Gasohol 91": 36.18, "Gasohol E20": 34.44, "Benzine": 44.34}
@@ -54,62 +65,12 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
-# --- Algorithms (คงเดิม) ---
+# --- อัลกอริทึมที่เหลืออยู่ ---
 def nearest_neighbor_route(df):
     unvisited = list(range(1, len(df))); route = [0]; current = 0
     while unvisited:
         next_node = min(unvisited, key=lambda x: calculate_distance(df.iloc[current]['Lat'], df.iloc[current]['Lon'], df.iloc[x]['Lat'], df.iloc[x]['Lon']))
         route.append(next_node); current = next_node; unvisited.remove(next_node)
-    return route
-
-def kruskal_route(df):
-    n = len(df)
-    if n <= 1: return list(range(n))
-    edges = []
-    for i in range(n):
-        for j in range(i + 1, n):
-            dist = calculate_distance(df.iloc[i]['Lat'], df.iloc[i]['Lon'], df.iloc[j]['Lat'], df.iloc[j]['Lon'])
-            edges.append((dist, i, j))
-    edges.sort(key=lambda x: x[0])
-    parent = list(range(n))
-    def find(i):
-        if parent[i] == i: return i
-        parent[i] = find(parent[i]); return parent[i]
-    def union(i, j):
-        root_i = find(i); root_j = find(j)
-        if root_i != root_j: parent[root_i] = root_j
-    mst = {i: [] for i in range(n)}
-    for dist, i, j in edges:
-        if find(i) != find(j):
-            union(i, j); mst[i].append(j); mst[j].append(i)
-    visited = [False] * n; route = []; stack = [0]
-    while stack:
-        node = stack.pop()
-        if not visited[node]:
-            visited[node] = True; route.append(node)
-            for neighbor in reversed(mst[node]):
-                if not visited[neighbor]: stack.append(neighbor)
-    return route
-
-def nearest_insertion_route(df):
-    if len(df) <= 2: return list(range(len(df)))
-    unvisited = list(range(1, len(df))); route = [0]
-    first_node = min(unvisited, key=lambda x: calculate_distance(df.iloc[0]['Lat'], df.iloc[0]['Lon'], df.iloc[x]['Lat'], df.iloc[x]['Lon']))
-    route.append(first_node); unvisited.remove(first_node)
-    while unvisited:
-        best_node = None; min_dist_to_route = float('inf')
-        for u in unvisited:
-            for r in route:
-                d = calculate_distance(df.iloc[u]['Lat'], df.iloc[u]['Lon'], df.iloc[r]['Lat'], df.iloc[r]['Lon'])
-                if d < min_dist_to_route: min_dist_to_route = d; best_node = u
-        best_pos = 1; min_added_dist = float('inf')
-        for i in range(1, len(route) + 1):
-            prev_n = route[i-1]; next_n = route[i] if i < len(route) else route[0]
-            dist_added = (calculate_distance(df.iloc[prev_n]['Lat'], df.iloc[prev_n]['Lon'], df.iloc[best_node]['Lat'], df.iloc[best_node]['Lon']) +
-                          calculate_distance(df.iloc[best_node]['Lat'], df.iloc[best_node]['Lon'], df.iloc[next_n]['Lat'], df.iloc[next_n]['Lon']) -
-                          calculate_distance(df.iloc[prev_n]['Lat'], df.iloc[prev_n]['Lon'], df.iloc[next_n]['Lat'], df.iloc[next_n]['Lon']))
-            if dist_added < min_added_dist: min_added_dist = dist_added; best_pos = i
-        route.insert(best_pos, best_node); unvisited.remove(best_node)
     return route
 
 def savings_route(df):
@@ -135,7 +96,7 @@ def savings_route(df):
     return [0] + final_nodes
 
 # ==========================================
-# เริ่มหน้าเว็บ Streamlit
+# หน้าเว็บ Streamlit
 # ==========================================
 st.set_page_config(page_title="Milk Run Optimization & Dashboard", layout="wide")
 st.title("🚚 SUT Daily Route Planing")
@@ -147,12 +108,10 @@ if uploaded_file is not None:
         if uploaded_file.name.endswith('.csv'): df = pd.read_csv(uploaded_file)
         else: df = pd.read_excel(uploaded_file)
         
-        # --- [ส่วนใหม่: เลือกวันที่โดยตรงผ่านปฏิทิน] ---
+        # เลือกวันที่ผ่านปฏิทิน
         st.subheader("📅 1. เลือกวันที่ปฏิบัติงาน")
         selected_date = st.date_input("จิ้มเลือกวันที่ต้องการวิ่งงาน", datetime.date.today())
-        st.info(f"ระบบกำลังจัดการตารางงานสำหรับวันที่: **{selected_date}**")
-        # -------------------------------------------
-            
+        
         if 'ชื่อสถานที่' in df.columns and 'Lat' in df.columns and 'Lon' in df.columns:
             st.subheader("📝 2. ข้อมูลสถานที่ต้นทางและลูกค้า")
             if 'เริ่มรับได้' not in df.columns: df['เริ่มรับได้'] = ""
@@ -160,78 +119,32 @@ if uploaded_file is not None:
             edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
 
             st.markdown("---")
-            with st.expander("⚙️ 3. ตั้งค่าพารามิเตอร์รถขนส่งและสิ่งแวดล้อม", expanded=True):
-                w_m200_net, w_m200_pkg = 0.200, 0.015
-                w_m2l_net, w_m2l_pkg = 2.000, 0.070
-                w_m5l_net, w_m5l_pkg = 5.000, 0.140
-                w_y65_net, w_y65_pkg = 0.065, 0.006
-                col_m200, col_m2l, col_m5l, col_y65 = '200cc', '2L', '5L', 'Yogurt'
-                t_col1, t_col2, t_col3, t_col4 = st.columns(4)
-                with t_col1: empty_speed = st.number_input("ความเร็วรถเปล่า (กม./ชม.)", value=50.0)
-                with t_col2: full_speed = st.number_input("ความเร็วรถตอนหนักสุด (กม./ชม.)", value=35.0)
-                with t_col3: max_capacity = st.number_input("พิกัดความจุรถสูงสุด (กก.)", value=1200.0)
-                with t_col4: start_time = st.time_input("เวลาออกเดินทาง", datetime.time(11, 0))
-                c_col1, c_col2, c_col3, c_col4, c_col5 = st.columns(5)
-                with c_col1: service_time = st.number_input("เวลาลงของ/จุด (นาที)", value=3)
-                with c_col2: fuel_rate = st.number_input("สิ้นเปลือง (กม./ลิตร)", value=10.0)
-                with c_col3: co2_rate = st.number_input("ปล่อย CO2 (kg/ลิตร)", value=2.70757206, format="%.8f")
-                fuel_prices_dict = get_auto_fuel_prices()
-                fuel_options = list(fuel_prices_dict.keys())
-                with c_col4: selected_fuel = st.selectbox("ชนิดน้ำมัน", fuel_options)
-                with c_col5: fuel_price = st.number_input(f"ราคา (บาท/ลิตร)", value=float(fuel_prices_dict.get(selected_fuel, 32.50)))
+            with st.expander("⚙️ 3. ตั้งค่าพารามิเตอร์รถขนส่ง", expanded=True):
+                col1, col2, col3 = st.columns(3)
+                with col1: empty_speed = st.number_input("ความเร็วรถเปล่า (กม./ชม.)", value=50.0)
+                with col2: full_speed = st.number_input("ความเร็วรถตอนหนักสุด (กม./ชม.)", value=35.0)
+                with col3: max_capacity = st.number_input("พิกัดความจุสูงสุด (กก.)", value=1200.0)
 
             st.subheader("🧠 4. เลือกวิธีจัดเรียงเส้นทาง")
-            algo_choice = st.radio("รูปแบบการจัดเส้นทาง:", ("1. ลำดับตามไฟล์ดั้งเดิม", "2. Nearest Neighbor Heuristic", "3. Kruskal's Heuristic", "4. Insertion Heuristic", "5. Saving Heuristic"))
+            algo_choice = st.radio("รูปแบบ:", ("1. ลำดับตามไฟล์ดั้งเดิม", "2. Nearest Neighbor Heuristic", "3. Saving Heuristic"))
             
             if "Nearest Neighbor" in algo_choice:
                 best_indices = nearest_neighbor_route(edited_df); best_indices.append(0); optimized_df = edited_df.iloc[best_indices].reset_index(drop=True)
-            elif "Kruskal's" in algo_choice:
-                best_indices = kruskal_route(edited_df); best_indices.append(0); optimized_df = edited_df.iloc[best_indices].reset_index(drop=True)
-            elif "Insertion" in algo_choice:
-                best_indices = nearest_insertion_route(edited_df); best_indices.append(0); optimized_df = edited_df.iloc[best_indices].reset_index(drop=True)
             elif "Saving" in algo_choice:
                 best_indices = savings_route(edited_df); best_indices.append(0); optimized_df = edited_df.iloc[best_indices].reset_index(drop=True)
             else:
                 optimized_df = pd.concat([edited_df, edited_df.iloc[[0]]], ignore_index=True)
 
+            # คำนวณตารางเดินรถ
             road_geometry, road_distances = get_osrm_route(optimized_df)
-            col_weight_total = 'น้ำหนักที่ส่ง (กก.)'
-            if all(c in optimized_df.columns for c in [col_m200, col_m2l, col_m5l, col_y65]):
-                weight_list = (pd.to_numeric(optimized_df[col_m200], errors='coerce').fillna(0) * (w_m200_net + w_m200_pkg) + 
-                               pd.to_numeric(optimized_df[col_m2l], errors='coerce').fillna(0) * (w_m2l_net + w_m2l_pkg) + 
-                               pd.to_numeric(optimized_df[col_m5l], errors='coerce').fillna(0) * (w_m5l_net + w_m5l_pkg) + 
-                               pd.to_numeric(optimized_df[col_y65], errors='coerce').fillna(0) * (w_y65_net + w_y65_pkg)).tolist()
-            elif col_weight_total in optimized_df.columns:
-                weight_list = pd.to_numeric(optimized_df[col_weight_total], errors='coerce').fillna(0).tolist()
-            else:
-                weight_list = [0.0] * len(optimized_df)
-
-            weight_list[-1] = 0.0; current_weight = sum(weight_list)
-            current_datetime = datetime.datetime.combine(selected_date, start_time)
-            schedule_data = []; total_distance = 0.0
-
+            current_datetime = datetime.datetime.combine(selected_date, datetime.time(11, 0))
+            schedule_data = []
+            
             for i in range(len(optimized_df)):
                 row = optimized_df.iloc[i]
-                current_speed = max(empty_speed - ((empty_speed - full_speed) * min(current_weight / max_capacity, 1.0)), 10.0) if max_capacity > 0 else empty_speed
-                if i == 0: dist = 0.0; travel_mins = 0
-                else:
-                    dist = road_distances[i-1] if road_distances else calculate_distance(optimized_df.iloc[i-1]['Lat'], optimized_df.iloc[i-1]['Lon'], row['Lat'], row['Lon'])
-                    travel_mins = (dist / current_speed) * 60
-                total_distance += dist; current_datetime += datetime.timedelta(minutes=travel_mins)
-                
-                status = "✅ ปกติ"; wait_mins = 0
-                if i > 0 and i < len(optimized_df) - 1:
-                    open_dt = datetime.datetime.combine(selected_date, parse_time_val(row.get('เริ่มรับได้', ''), datetime.time(0, 0)))
-                    close_dt = datetime.datetime.combine(selected_date, parse_time_val(row.get('ต้องส่งก่อน', ''), datetime.time(23, 59)))
-                    if current_datetime < open_dt:
-                        wait_mins = (open_dt - current_datetime).total_seconds() / 60.0; current_datetime = open_dt; status = f"⏳ รอเริ่มรับ {int(wait_mins)} นาที"
-                    elif current_datetime > close_dt: status = "❌ ล่าช้า"
-                
-                if i == len(optimized_df) - 1: departure_time = "-"
-                else: current_datetime += datetime.timedelta(minutes=service_time); departure_time = current_datetime.strftime("%H:%M:%S")
-                
-                schedule_data.append({"ลำดับ": i, "ชื่อสถานที่": f"🔄 กลับสู่: {row['ชื่อสถานที่']}" if i == len(optimized_df)-1 else row['ชื่อสถานที่'], "สถานะ": status, "ถึง (ETA)": current_datetime.strftime("%H:%M:%S"), "เวลาออก": departure_time, "ระยะทาง (กม.)": f"{dist:.2f}", "นน. บรรทุก": f"{current_weight:.2f}"})
-                current_weight = max(current_weight - weight_list[i], 0)
+                dist = 0 if i == 0 else (road_distances[i-1] if road_distances else calculate_distance(optimized_df.iloc[i-1]['Lat'], optimized_df.iloc[i-1]['Lon'], row['Lat'], row['Lon']))
+                current_datetime += datetime.timedelta(minutes=(dist/50)*60)
+                schedule_data.append({"ลำดับ": i, "ชื่อสถานที่": row['ชื่อสถานที่'], "เวลาถึง (ETA)": current_datetime.strftime("%H:%M:%S")})
 
             st.subheader("📊 5. สรุปผลลัพธ์")
             st.dataframe(pd.DataFrame(schedule_data), use_container_width=True)
