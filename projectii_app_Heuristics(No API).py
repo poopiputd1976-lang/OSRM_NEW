@@ -6,9 +6,8 @@ from streamlit_folium import st_folium
 import math
 import datetime
 import requests
-import re
 
-# --- ฟังก์ชันต่างๆ ---
+# [ฟังก์ชันต่างๆ คงเดิมไว้เหมือนเดิม...]
 def get_osrm_route(df):
     try:
         coords = ";".join([f"{row['Lon']},{row['Lat']}" for _, row in df.iterrows()])
@@ -32,6 +31,7 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
+# --- อัลกอริทึม ---
 def nearest_neighbor_route(df):
     unvisited = list(range(1, len(df))); route = [0]; current = 0
     while unvisited:
@@ -72,51 +72,49 @@ if uploaded_file is not None:
         if uploaded_file.name.endswith('.csv'): df = pd.read_csv(uploaded_file)
         else: df = pd.read_excel(uploaded_file)
         
+        # เพิ่มคอลัมน์ ServiceTime ให้ในตารางเลย ถ้าไม่มีมา
+        if 'ServiceTime' not in df.columns: df['ServiceTime'] = 0
+        
         st.subheader("📅 1. กำหนดการปฏิบัติงาน")
         col1, col2 = st.columns(2)
         with col1: selected_date = st.date_input("วันที่ปฏิบัติงาน", datetime.date.today())
         with col2: start_time = st.time_input("เวลาเริ่มปฏิบัติงาน", datetime.time(8, 0))
         
-        if 'ชื่อสถานที่' in df.columns and 'Lat' in df.columns and 'Lon' in df.columns:
-            st.subheader("📝 2. ข้อมูลสถานที่ต้นทางและลูกค้า")
-            # ถ้าไม่มีคอลัมน์ ServiceTime ให้สร้างเพิ่มโดย default เป็น 0
-            if 'ServiceTime' not in df.columns: df['ServiceTime'] = 0
-            edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
+        st.subheader("📝 2. ข้อมูลสถานที่และระยะเวลาจอด (Service Time)")
+        st.info("คุณสามารถแก้ไข Service Time (วินาที) ได้ที่ตารางด้านล่างนี้โดยตรง")
+        edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
 
-            st.subheader("🧠 3. เลือกวิธีจัดเรียงเส้นทาง")
-            algo_choice = st.radio("รูปแบบ:", ("1. ลำดับตามไฟล์ดั้งเดิม", "2. Nearest Neighbor Heuristic", "3. Saving Heuristic"))
-            
-            if "Nearest Neighbor" in algo_choice:
-                best_indices = nearest_neighbor_route(edited_df); best_indices.append(0); optimized_df = edited_df.iloc[best_indices].reset_index(drop=True)
-            elif "Saving" in algo_choice:
-                best_indices = savings_route(edited_df); best_indices.append(0); optimized_df = edited_df.iloc[best_indices].reset_index(drop=True)
-            else:
-                optimized_df = pd.concat([edited_df, edited_df.iloc[[0]]], ignore_index=True)
+        st.subheader("🧠 3. เลือกวิธีจัดเรียงเส้นทาง")
+        algo_choice = st.radio("รูปแบบ:", ("1. ลำดับตามไฟล์ดั้งเดิม", "2. Nearest Neighbor Heuristic", "3. Saving Heuristic"))
+        
+        if "Nearest Neighbor" in algo_choice:
+            best_indices = nearest_neighbor_route(edited_df); best_indices.append(0); optimized_df = edited_df.iloc[best_indices].reset_index(drop=True)
+        elif "Saving" in algo_choice:
+            best_indices = savings_route(edited_df); best_indices.append(0); optimized_df = edited_df.iloc[best_indices].reset_index(drop=True)
+        else:
+            optimized_df = pd.concat([edited_df, edited_df.iloc[[0]]], ignore_index=True)
 
-            # คำนวณตารางเดินรถ
-            road_geometry, road_distances = get_osrm_route(optimized_df)
-            current_datetime = datetime.datetime.combine(selected_date, start_time)
-            schedule_data = []
+        # คำนวณตารางเดินรถ
+        road_geometry, road_distances = get_osrm_route(optimized_df)
+        current_datetime = datetime.datetime.combine(selected_date, start_time)
+        schedule_data = []
+        
+        for i in range(len(optimized_df)):
+            row = optimized_df.iloc[i]
+            if i > 0:
+                dist = road_distances[i-1] if road_distances else calculate_distance(optimized_df.iloc[i-1]['Lat'], optimized_df.iloc[i-1]['Lon'], row['Lat'], row['Lon'])
+                current_datetime += datetime.timedelta(minutes=(dist/50)*60)
             
-            for i in range(len(optimized_df)):
-                row = optimized_df.iloc[i]
-                
-                # 1. บวกเวลาเดินทาง (กม./50 * 60 นาที)
-                if i > 0:
-                    dist = road_distances[i-1] if road_distances else calculate_distance(optimized_df.iloc[i-1]['Lat'], optimized_df.iloc[i-1]['Lon'], row['Lat'], row['Lon'])
-                    current_datetime += datetime.timedelta(minutes=(dist/50)*60)
-                
-                # 2. บวกเวลา Service Time (หน่วยวินาที)
-                service_seconds = int(row.get('ServiceTime', 0))
-                current_datetime += datetime.timedelta(seconds=service_seconds)
-                
-                schedule_data.append({"ลำดับ": i, "ชื่อสถานที่": row['ชื่อสถานที่'], "เวลาถึง (ETA)": current_datetime.strftime("%H:%M:%S")})
+            # ดึงค่าจากตารางที่แก้ไขแล้ว
+            service_seconds = int(row.get('ServiceTime', 0))
+            current_datetime += datetime.timedelta(seconds=service_seconds)
+            
+            schedule_data.append({"ลำดับ": i, "ชื่อสถานที่": row['ชื่อสถานที่'], "เวลาถึง (ETA)": current_datetime.strftime("%H:%M:%S")})
 
-            st.subheader("📊 4. สรุปผลลัพธ์")
-            st.dataframe(pd.DataFrame(schedule_data), use_container_width=True)
-            
-            m = folium.Map(location=[optimized_df['Lat'].mean(), optimized_df['Lon'].mean()], zoom_start=14)
-            if road_geometry: AntPath(road_geometry, color="blue", weight=5).add_to(m)
-            st_folium(m, width=1000, height=500)
+        st.subheader("📊 4. สรุปผลลัพธ์")
+        st.dataframe(pd.DataFrame(schedule_data), use_container_width=True)
+        
+        m = folium.Map(location=[optimized_df['Lat'].mean(), optimized_df['Lon'].mean()], zoom_start=14)
+        if road_geometry: AntPath(road_geometry, color="blue", weight=5).add_to(m)
+        st_folium(m, width=1000, height=500)
     except Exception as e: st.error(f"Error: {e}")
-else: st.info("อัปโหลดไฟล์เพื่อเริ่มต้น")
