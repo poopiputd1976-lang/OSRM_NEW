@@ -7,7 +7,16 @@ import math
 import datetime
 import requests
 
-# --- ฟังก์ชันทั้งหมด ---
+# --- ฟังก์ชันคำนวณและดึงข้อมูล ---
+def get_fuel_prices_by_brand(brand):
+    # ข้อมูลตัวอย่าง (สามารถพัฒนาเป็น API ได้ในอนาคต)
+    data = {
+        "ปตท (PTT)": {"Diesel": 33.50, "Gasohol 95": 36.25, "E20": 34.14},
+        "บางจาก (BCP)": {"Diesel": 33.40, "Gasohol 95": 36.15, "E20": 34.04},
+        "PT": {"Diesel": 33.30, "Gasohol 95": 36.05, "E20": 33.94}
+    }
+    return data.get(brand, {})
+
 def get_osrm_route(df):
     try:
         coords = ";".join([f"{row['Lon']},{row['Lat']}" for _, row in df.iterrows()])
@@ -61,6 +70,14 @@ def savings_route(df):
 # --- ส่วนหน้าเว็บ ---
 st.set_page_config(page_title="Milk Run Optimization & Dashboard", layout="wide")
 st.title("🚚 SUT Daily Route Planing")
+
+# ส่วนแสดงราคาน้ำมัน
+st.subheader("⛽ ตรวจสอบราคาน้ำมันแต่ละแบรนด์")
+selected_brand = st.selectbox("เลือกปั๊มน้ำมัน:", ["ปตท (PTT)", "บางจาก (BCP)", "PT"])
+prices = get_fuel_prices_by_brand(selected_brand)
+cols = st.columns(len(prices))
+for idx, (fuel, price) in enumerate(prices.items()):
+    cols[idx].metric(label=fuel, value=f"{price} บาท")
 
 uploaded_file = st.file_uploader("📂 อัปโหลดไฟล์สถานที่ (Excel / CSV)", type=["xlsx", "csv"])
 
