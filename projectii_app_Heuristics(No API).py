@@ -86,16 +86,22 @@ if uploaded_file is not None:
             with c1:
                 truck_count = st.number_input("จำนวนรถ (คัน)", min_value=1, value=1)
             with c2:
-                max_weight = st.number_input("จำกัดน้ำหนักบรรทุกสูงสุดต่อคัน (ตัน)", min_value=0.0, max_value=9.5, value=0.0, step=0.1)
+                # แก้ไขให้รับค่าได้แต่เช็ค Logic ด้านล่าง
+                max_weight = st.number_input("จำกัดน้ำหนักบรรทุกสูงสุดต่อคัน (ตัน)", min_value=0.0, step=0.1, value=0.0)
+            
+            # --- ตรวจสอบ Logic น้ำหนักเกินเพดาน 9.5 ตัน ---
+            if max_weight > 9.5:
+                st.error("⚠️ แจ้งเตือน: น้ำหนักที่กำหนดเกินเพดานสูงสุด 9.5 ตัน! กรุณาระบุค่าใหม่")
+                max_weight = 9.5
             
             weight_col = "น้ำหนัก(ตัน)"
             if weight_col in edited_df.columns:
                 total_weight = edited_df[weight_col].sum()
                 capacity_limit = truck_count * max_weight
-                st.write(f"น้ำหนักรวมของสินค้า: {total_weight:.2f} ตัน | ขีดจำกัดรวม: {capacity_limit:.2f} ตัน")
+                st.write(f"น้ำหนักรวมของสินค้า: {total_weight:.2f} ตัน | ขีดจำกัดรวม (ตั้งค่าที่ {max_weight} ตัน/คัน): {capacity_limit:.2f} ตัน")
                 
                 if total_weight > capacity_limit:
-                    st.error(f"⚠️ น้ำหนักเกินขีดจำกัดที่คุณตั้งไว้! (เกินไป {total_weight - capacity_limit:.2f} ตัน)")
+                    st.error(f"⚠️ น้ำหนักรวมเกินขีดจำกัดที่คุณตั้งไว้! (เกินไป {total_weight - capacity_limit:.2f} ตัน)")
                 else:
                     st.success("✅ น้ำหนักบรรทุกอยู่ในเกณฑ์")
 
