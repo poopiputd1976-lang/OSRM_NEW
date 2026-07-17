@@ -6,8 +6,30 @@ from streamlit_folium import st_folium
 import math
 import datetime
 import requests
+from bs4 import BeautifulSoup
 
-# --- ฟังก์ชันทั้งหมด ---
+# --- ส่วนของการดึงราคาน้ำมัน ---
+@st.cache_data(ttl=3600) # ดึงข้อมูลใหม่ทุกๆ 1 ชั่วโมง
+def get_diesel_price():
+    try:
+        # ใช้หน้าเวป PTT สรุปราคา
+        url = "https://www.pttor.com/th/oil_price"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # ค้นหาคำว่า 'ดีเซล' ในตารางราคา (ปรับปรุงตามโครงสร้างหน้าเว็บทั่วไป)
+        price_tags = soup.find_all(string=lambda text: "ดีเซล" in str(text))
+        for tag in price_tags:
+            row = tag.find_parent("tr")
+            if row:
+                price = row.find_all("td")[1].text.strip()
+                return float(price)
+    except:
+        return 32.00  # ค่าสำรองหากดึงข้อมูลไม่ได้
+    return 32.00
+
+# --- ฟังก์ชันเดิม ---
 def get_osrm_route(df):
     try:
         coords = ";".join([f"{row['Lon']},{row['Lat']}" for _, row in df.iterrows()])
@@ -62,6 +84,9 @@ def savings_route(df):
 st.set_page_config(page_title="Milk Run Optimization & Dashboard", layout="wide")
 st.title("🚚 SUT Daily Route Planing")
 
+# ดึงราคาน้ำมันมาเตรียมไว้
+current_gas_price = get_diesel_price()
+
 uploaded_file = st.file_uploader("📂 อัปโหลดไฟล์สถานที่ (Excel / CSV)", type=["xlsx", "csv"])
 
 if uploaded_file is not None:
@@ -70,10 +95,11 @@ if uploaded_file is not None:
         else: df = pd.read_excel(uploaded_file)
         
         st.subheader("📅 1. กำหนดการและค่าพารามิเตอร์")
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1: selected_date = st.date_input("วันที่ปฏิบัติงาน", datetime.date.today())
         with col2: start_time = st.time_input("เวลาเริ่มปฏิบัติงาน", datetime.time(8, 0))
         with col3: service_time_input = st.number_input("เวลาจอดลงของต่อจุด (วินาที)", min_value=0, value=300, step=10)
+        with col4: fuel_efficiency = st.number_input("อัตราสิ้นเปลือง (กม./ลิตร)", min_value=1.0, value=10.0, step=0.5)
         
         if 'ชื่อสถานที่' in df.columns and 'Lat' in df.columns and 'Lon' in df.columns:
             st.subheader("📝 2. ข้อมูลสถานที่ต้นทางและลูกค้า")
@@ -93,33 +119,38 @@ if uploaded_file is not None:
             current_datetime = datetime.datetime.combine(selected_date, start_time)
             schedule_data = []
             
+            total_dist = 0
             for i in range(len(optimized_df)):
                 row = optimized_df.iloc[i]
                 if i > 0:
                     dist = road_distances[i-1] if road_distances else calculate_distance(optimized_df.iloc[i-1]['Lat'], optimized_df.iloc[i-1]['Lon'], row['Lat'], row['Lon'])
+                    total_dist += dist
                     current_datetime += datetime.timedelta(minutes=(dist/50)*60)
                 current_datetime += datetime.timedelta(seconds=service_time_input)
                 schedule_data.append({"ลำดับ": i, "ชื่อสถานที่": row['ชื่อสถานที่'], "เวลาถึง (ETA)": current_datetime.strftime("%H:%M:%S")})
 
             st.subheader("📊 4. สรุปผลลัพธ์")
+            
+            # แสดง Metric ราคาน้ำมันและระยะทาง
+            col_res1, col_res2, col_res3 = st.columns(3)
+            col_res1.metric("ระยะทางรวม", f"{total_dist:.2f} กม.")
+            col_res2.metric("ราคาน้ำมันวันนี้", f"{current_gas_price} บาท/ลิตร")
+            col_res3.metric("ค่าน้ำมันโดยประมาณ", f"{(total_dist / fuel_efficiency) * current_gas_price:.2f} บาท")
+            
             st.dataframe(pd.DataFrame(schedule_data), use_container_width=True)
             
             # --- สร้างแผนที่ ---
             m = folium.Map(location=[optimized_df['Lat'].mean(), optimized_df['Lon'].mean()], zoom_start=14)
             if road_geometry: AntPath(road_geometry, color="blue", weight=5).add_to(m)
             
-            # --- วงกลมเลขลำดับ สีดำ-ขาว ---
             for i in range(len(optimized_df)):
                 row = optimized_df.iloc[i]
                 folium.Marker(
                     location=[row['Lat'], row['Lon']],
                     icon=folium.DivIcon(html=f"""
-                        <div style="
-                            font-size: 10pt; font-weight: bold; color: white; 
-                            background-color: black; border-radius: 50%; 
-                            width: 25px; height: 25px; display: flex; 
-                            align-items: center; justify-content: center;
-                            border: 2px solid white;">
+                        <div style="font-size: 10pt; font-weight: bold; color: white; background-color: black; 
+                                    border-radius: 50%; width: 25px; height: 25px; display: flex; 
+                                    align-items: center; justify-content: center; border: 2px solid white;">
                             {i}
                         </div>
                     """),
