@@ -11,6 +11,16 @@ from streamlit_folium import st_folium
 
 
 # =========================================================
+# ค่าพารามิเตอร์หลังบ้านสำหรับการใช้น้ำมัน
+# =========================================================
+# อัตราสิ้นเปลืองขณะรถวิ่ง หน่วยกิโลเมตรต่อลิตร
+BACKEND_DRIVING_FUEL_EFFICIENCY_KM_PER_LITER = 10.0
+
+# อัตราการใช้น้ำมันขณะจอดติดเครื่อง หน่วยลิตรต่อชั่วโมง
+BACKEND_IDLING_FUEL_RATE_LITER_PER_HOUR = 1.5
+
+
+# =========================================================
 # ฟังก์ชันคำนวณระยะทางและเส้นทาง
 # =========================================================
 def calculate_distance(lat1, lon1, lat2, lon2):
@@ -756,10 +766,10 @@ if uploaded_file is not None:
             f"{total_capacity - total_weight:.3f} ตัน",
         )
 
-        st.subheader("⛽ 5. ราคาน้ำมันและอัตราสิ้นเปลือง")
+        st.subheader("⛽ 5. ราคาน้ำมัน")
 
         fuel_data, fuel_error = get_latest_fuel_prices()
-        fuel_col1, fuel_col2, fuel_col3 = st.columns(3)
+        fuel_col1, fuel_col2 = st.columns(2)
 
         if fuel_data and fuel_data["prices"]:
             available_fuels = list(fuel_data["prices"].keys())
@@ -788,15 +798,6 @@ if uploaded_file is not None:
                     value=latest_fuel_price,
                     step=0.01,
                     format="%.2f",
-                )
-
-            with fuel_col3:
-                fuel_efficiency = st.number_input(
-                    "อัตราสิ้นเปลืองรถ (กม./ลิตร)",
-                    min_value=0.1,
-                    value=10.0,
-                    step=0.1,
-                    format="%.1f",
                 )
 
             st.success(
@@ -834,14 +835,10 @@ if uploaded_file is not None:
                     format="%.2f",
                 )
 
-            with fuel_col3:
-                fuel_efficiency = st.number_input(
-                    "อัตราสิ้นเปลืองรถ (กม./ลิตร)",
-                    min_value=0.1,
-                    value=10.0,
-                    step=0.1,
-                    format="%.1f",
-                )
+        st.caption(
+            "ระบบใช้อัตราสิ้นเปลืองขณะวิ่งและอัตราการใช้น้ำมันขณะจอด "
+            "จากค่าที่กำหนดไว้หลังบ้าน"
+        )
 
         st.subheader("🧠 6. เลือกวิธีจัดลำดับเส้นทาง")
 
@@ -900,6 +897,8 @@ if uploaded_file is not None:
         all_schedule_rows = []
         assignment_summary_rows = []
         route_summary_rows = []
+        total_driving_fuel_liters_all_vehicles = 0.0
+        total_idling_fuel_liters_all_vehicles = 0.0
         total_fuel_liters_all_vehicles = 0.0
         total_fuel_cost_all_vehicles = 0.0
 
@@ -950,13 +949,29 @@ if uploaded_file is not None:
                 for row in vehicle_schedule
             )
 
+            # น้ำมันขณะวิ่ง คำนวณจากระยะทางรวม
+            driving_fuel_liters = (
+                total_route_distance
+                / BACKEND_DRIVING_FUEL_EFFICIENCY_KM_PER_LITER
+            )
+
+            # น้ำมันขณะจอดติดเครื่อง คำนวณเฉพาะจุดส่งสินค้า
+            total_service_seconds = (
+                len(customer_indices) * float(service_time_input)
+            )
+            idling_fuel_liters = (
+                total_service_seconds / 3600.0
+            ) * BACKEND_IDLING_FUEL_RATE_LITER_PER_HOUR
+
             estimated_fuel_liters = (
-                total_route_distance / float(fuel_efficiency)
+                driving_fuel_liters + idling_fuel_liters
             )
             estimated_fuel_cost = (
                 estimated_fuel_liters * float(fuel_price)
             )
 
+            total_driving_fuel_liters_all_vehicles += driving_fuel_liters
+            total_idling_fuel_liters_all_vehicles += idling_fuel_liters
             total_fuel_liters_all_vehicles += estimated_fuel_liters
             total_fuel_cost_all_vehicles += estimated_fuel_cost
 
@@ -978,11 +993,15 @@ if uploaded_file is not None:
                         2,
                     ),
                     "ชนิดน้ำมัน": selected_fuel,
-                    "อัตราสิ้นเปลือง (กม./ลิตร)": round(
-                        float(fuel_efficiency),
+                    "น้ำมันขณะวิ่ง (ลิตร)": round(
+                        driving_fuel_liters,
                         2,
                     ),
-                    "น้ำมันที่ใช้โดยประมาณ (ลิตร)": round(
+                    "น้ำมันขณะจอด (ลิตร)": round(
+                        idling_fuel_liters,
+                        2,
+                    ),
+                    "น้ำมันรวมโดยประมาณ (ลิตร)": round(
                         estimated_fuel_liters,
                         2,
                     ),
@@ -1093,18 +1112,26 @@ if uploaded_file is not None:
             use_container_width=True,
         )
 
-        fuel_metric_col1, fuel_metric_col2, fuel_metric_col3 = st.columns(3)
+        fuel_metric_col1, fuel_metric_col2, fuel_metric_col3, fuel_metric_col4 = st.columns(4)
         fuel_metric_col1.metric(
+            "น้ำมันขณะวิ่งรวม",
+            f"{total_driving_fuel_liters_all_vehicles:.2f} ลิตร",
+        )
+        fuel_metric_col2.metric(
+            "น้ำมันขณะจอดรวม",
+            f"{total_idling_fuel_liters_all_vehicles:.2f} ลิตร",
+        )
+        fuel_metric_col3.metric(
             "น้ำมันรวมทุกคัน",
             f"{total_fuel_liters_all_vehicles:.2f} ลิตร",
         )
-        fuel_metric_col2.metric(
+        fuel_metric_col4.metric(
             "ต้นทุนน้ำมันรวม",
             f"{total_fuel_cost_all_vehicles:,.2f} บาท",
         )
-        fuel_metric_col3.metric(
-            "ราคาที่ใช้คำนวณ",
-            f"{float(fuel_price):.2f} บาท/ลิตร",
+
+        st.caption(
+            f"ราคาที่ใช้คำนวณ {float(fuel_price):.2f} บาท/ลิตร"
         )
 
         if assignment_summary_rows:
