@@ -7,7 +7,7 @@ import math
 import datetime
 import requests
 
-# --- ฟังก์ชันดึงราคาน้ำมัน (Dynamic API ที่ปลอดภัย) ---
+# --- ฟังก์ชันดึงราคาน้ำมัน (Dynamic API ที่แกะข้อมูลแล้ว) ---
 def get_fuel_prices_api():
     url = "https://api.chnwt.dev/thai-oil-api/latest"
     try:
@@ -73,25 +73,28 @@ def savings_route(df):
 st.set_page_config(page_title="Milk Run Optimization & Dashboard", layout="wide")
 st.title("🚚 SUT Daily Route Planning")
 
-# ส่วนแสดงราคาน้ำมัน Dynamic แบบตารางสรุปที่ปลอดภัย
+# ส่วนแสดงราคาน้ำมัน Dynamic ที่แกะ JSON เรียบร้อยแล้ว
 st.subheader("⛽ ราคาน้ำมันอัปเดตล่าสุด (Real-time)")
 fuel_data = get_fuel_prices_api()
 
 if fuel_data and isinstance(fuel_data, dict):
     price_list = []
-    for brand, prices in fuel_data.items():
-        if isinstance(prices, dict):
+    for brand, fuels in fuel_data.items():
+        if isinstance(fuels, dict):
             row = {"ปั๊มน้ำมัน": brand.upper()}
-            row.update(prices)
+            for fuel_name, details in fuels.items():
+                if isinstance(details, dict) and "price" in details:
+                    # ดึงเฉพาะราคามาแสดง
+                    row[fuel_name.upper()] = details["price"] if details["price"] else "-"
             price_list.append(row)
     
     if price_list:
         df_prices = pd.DataFrame(price_list)
-        st.table(df_prices.set_index("ปั๊มน้ำมัน"))
+        st.dataframe(df_prices.set_index("ปั๊มน้ำมัน"), use_container_width=True)
     else:
         st.warning("ไม่พบข้อมูลราคาน้ำมันในขณะนี้")
 else:
-    st.error("ไม่สามารถเชื่อมต่อ API ราคาน้ำมันได้ในขณะนี้")
+    st.error("ไม่สามารถเชื่อมต่อ API ราคาน้ำมันได้")
 
 # --- ส่วนการคำนวณและแผนที่ ---
 uploaded_file = st.file_uploader("📂 อัปโหลดไฟล์สถานที่ (Excel / CSV)", type=["xlsx", "csv"])
