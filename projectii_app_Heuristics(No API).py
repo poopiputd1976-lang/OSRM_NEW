@@ -73,31 +73,29 @@ def savings_route(df):
 st.set_page_config(page_title="Milk Run Optimization & Dashboard", layout="wide")
 st.title("🚚 SUT Daily Route Planning")
 
-# ส่วนแสดงราคาน้ำมัน
+# ส่วนแสดงราคาน้ำมัน (แก้ไขการสลับแกนข้อมูลให้ถูกต้อง)
 st.subheader("⛽ ราคาน้ำมันอัปเดตล่าสุด (Real-time)")
 fuel_data = get_fuel_prices_api()
 
 if fuel_data:
     try:
-        rows = []
+        data_for_df = {}
         for brand, fuels in fuel_data.items():
             if isinstance(fuels, dict):
-                record = {"ปั๊มน้ำมัน": brand.upper()}
+                brand_prices = {}
                 for fuel_name, info in fuels.items():
                     val = info.get("price") if isinstance(info, dict) else info
-                    record[fuel_name.upper()] = val if val else "-"
-                rows.append(record)
+                    brand_prices[fuel_name.upper()] = val if val else "-"
+                data_for_df[brand.upper()] = brand_prices
         
-        if rows:
-            st.dataframe(pd.DataFrame(rows), use_container_width=True)
-        else:
-            st.write("พบข้อมูลแต่ไม่สามารถประมวลผลตารางได้")
+        df_display = pd.DataFrame.from_dict(data_for_df, orient='index')
+        st.dataframe(df_display, use_container_width=True)
     except Exception as e:
-        st.error(f"เกิดข้อผิดพลาด: {e}")
+        st.error(f"เกิดข้อผิดพลาดในการแสดงผลราคาน้ำมัน: {e}")
 else:
-    st.error("ไม่สามารถเชื่อมต่อ API ราคาน้ำมันได้")
+    st.error("ไม่สามารถเชื่อมต่อ API ราคาน้ำมันได้ในขณะนี้")
 
-# --- ส่วนอัปโหลดและคำนวณ ---
+# --- ส่วนการคำนวณ ---
 uploaded_file = st.file_uploader("📂 อัปโหลดไฟล์สถานที่ (Excel / CSV)", type=["xlsx", "csv"])
 
 if uploaded_file is not None:
