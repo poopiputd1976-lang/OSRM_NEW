@@ -73,23 +73,21 @@ def savings_route(df):
 st.set_page_config(page_title="Milk Run Optimization & Dashboard", layout="wide")
 st.title("🚚 SUT Daily Route Planing")
 
-# ส่วนดึงราคาน้ำมัน Dynamic
-st.subheader("⛽ ตรวจสอบราคาน้ำมันอัปเดตล่าสุด")
+# ส่วนแสดงราคาน้ำมัน Dynamic แบบตารางสรุป
+st.subheader("⛽ ราคาน้ำมันอัปเดตล่าสุด (Real-time)")
 fuel_data = get_fuel_prices_api()
 
 if fuel_data:
-    brands = list(fuel_data.keys())
-    selected_brand = st.selectbox("เลือกปั๊มน้ำมัน:", brands)
-    brand_prices = fuel_data.get(selected_brand, {})
+    price_list = []
+    for brand, prices in fuel_data.items():
+        row = {"ปั๊มน้ำมัน": brand.upper()}
+        row.update(prices)
+        price_list.append(row)
     
-    if brand_prices and len(brand_prices) > 0:
-        cols = st.columns(len(brand_prices))
-        for idx, (fuel, price) in enumerate(brand_prices.items()):
-            cols[idx].metric(label=fuel.upper(), value=f"{price if price else 0} บาท")
-    else:
-        st.warning("ไม่พบข้อมูลราคาน้ำมันในขณะนี้")
+    df_prices = pd.DataFrame(price_list)
+    st.table(df_prices.set_index("ปั๊มน้ำมัน"))
 else:
-    st.error("ไม่สามารถเชื่อมต่อ API ราคาน้ำมันได้")
+    st.error("ไม่สามารถเชื่อมต่อ API ราคาน้ำมันได้ในขณะนี้")
 
 uploaded_file = st.file_uploader("📂 อัปโหลดไฟล์สถานที่ (Excel / CSV)", type=["xlsx", "csv"])
 
