@@ -79,7 +79,7 @@ if uploaded_file is not None:
             st.subheader("📝 2. ข้อมูลสถานที่ต้นทางและลูกค้า")
             edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
 
-            # --- ส่วนการตั้งค่ารถขนส่ง (หน่วยเป็น ตัน เท่านั้น) ---
+            # --- ส่วนการตั้งค่ารถขนส่ง (กำหนดขีดจำกัดที่ 9.5 ตัน) ---
             st.subheader("🚛 การตั้งค่ารถขนส่ง")
             st.markdown("ประเภทรถ: **กระบะตู้ทึบ**")
             c1, c2 = st.columns(2)
@@ -88,17 +88,16 @@ if uploaded_file is not None:
             with c2:
                 max_weight = st.number_input("จำกัดน้ำหนักบรรทุกสูงสุดต่อคัน (ตัน)", min_value=0.0, value=9.5, step=0.1)
             
-            weight_col = "น้ำหนัก(ตัน)" # แก้ชื่อคอลัมน์ให้ตรงกับไฟล์ของคุณ
+            weight_col = "น้ำหนัก(ตัน)" # แก้ชื่อคอลัมน์นี้ให้ตรงกับไฟล์ Excel ของคุณ
             if weight_col in edited_df.columns:
                 total_weight = edited_df[weight_col].sum()
                 capacity_limit = truck_count * max_weight
                 st.write(f"น้ำหนักรวมของสินค้า: {total_weight:.2f} ตัน | ขีดจำกัดรวม: {capacity_limit:.2f} ตัน")
                 
                 if total_weight > capacity_limit:
-                    st.error(f"⚠️ น้ำหนักเกินขีดจำกัด! (เกินไป {total_weight - capacity_limit:.2f} ตัน)")
+                    st.error(f"⚠️ น้ำหนักเกินขีดจำกัด (สูงสุด 9.5 ตันต่อคัน)! (เกินไป {total_weight - capacity_limit:.2f} ตัน)")
                 else:
-                    st.success("✅ น้ำหนักบรรทุกอยู่ในเกณฑ์")
-            # --------------------------------------------------
+                    st.success("✅ น้ำหนักบรรทุกอยู่ในเกณฑ์มาตรฐาน")
 
             st.subheader("🧠 3. เลือกวิธีจัดเรียงเส้นทาง")
             algo_choice = st.radio("รูปแบบ:", ("1. ลำดับตามไฟล์ดั้งเดิม", "2. Nearest Neighbor Heuristic", "3. Saving Heuristic"))
@@ -133,16 +132,7 @@ if uploaded_file is not None:
                 row = optimized_df.iloc[i]
                 folium.Marker(
                     location=[row['Lat'], row['Lon']],
-                    icon=folium.DivIcon(html=f"""
-                        <div style="
-                            font-size: 10pt; font-weight: bold; color: white; 
-                            background-color: black; border-radius: 50%; 
-                            width: 25px; height: 25px; display: flex; 
-                            align-items: center; justify-content: center;
-                            border: 2px solid white;">
-                            {i}
-                        </div>
-                    """),
+                    icon=folium.DivIcon(html=f'<div style="font-size: 10pt; font-weight: bold; color: white; background-color: black; border-radius: 50%; width: 25px; height: 25px; display: flex; align-items: center; justify-content: center; border: 2px solid white;">{i}</div>'),
                     popup=f"ลำดับที่ {i}: {row['ชื่อสถานที่']}"
                 ).add_to(m)
                 
