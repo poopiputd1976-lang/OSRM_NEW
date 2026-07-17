@@ -7,7 +7,7 @@ import math
 import datetime
 import requests
 
-# --- ฟังก์ชันทั้งหมด ---
+# --- ฟังก์ชันทั้งหมดต้องอยู่ส่วนบนสุด ---
 def get_osrm_route(df):
     try:
         coords = ";".join([f"{row['Lon']},{row['Lat']}" for _, row in df.iterrows()])
@@ -104,22 +104,16 @@ if uploaded_file is not None:
             st.subheader("📊 4. สรุปผลลัพธ์")
             st.dataframe(pd.DataFrame(schedule_data), use_container_width=True)
             
-            # --- สร้างแผนที่พร้อมจุดลำดับ (CircleMarker ที่แม่นยำ) ---
+            # --- สร้างแผนที่พร้อมจุดลำดับ ---
             m = folium.Map(location=[optimized_df['Lat'].mean(), optimized_df['Lon'].mean()], zoom_start=14)
             if road_geometry: AntPath(road_geometry, color="blue", weight=5).add_to(m)
             
             for i in range(len(optimized_df)):
                 row = optimized_df.iloc[i]
-                # จุดวงกลมแดง
-                folium.CircleMarker(
+                folium.Marker(
                     location=[row['Lat'], row['Lon']],
-                    radius=8, color='white', weight=2, fill=True, fill_color='red', fill_opacity=1,
-                    popup=f"ลำดับที่ {i}: {row['ชื่อสถานที่']}"
-                ).add_to(m)
-                # เลขกำกับ
-                folium.map.Marker(
-                    [row['Lat'], row['Lon']],
-                    icon=folium.DivIcon(html=f'<div style="font-size: 10pt; font-weight: bold; color: black; margin-top: -5px; margin-left: 10px;">{i}</div>')
+                    icon=folium.DivIcon(html=f"""<div style="font-size: 10pt; font-weight: bold; color: white; background-color: red; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;">{i}</div>"""),
+                    popup=f"จุดที่ {i}: {row['ชื่อสถานที่']}"
                 ).add_to(m)
                 
             st_folium(m, width=1000, height=500)
