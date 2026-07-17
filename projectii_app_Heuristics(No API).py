@@ -79,20 +79,30 @@ if uploaded_file is not None:
             st.subheader("📝 2. ข้อมูลสถานที่ต้นทางและลูกค้า")
             edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
 
-            # ส่วนเพิ่มเติม: แสดงประเภทรถและตรวจสอบน้ำหนัก
-            st.subheader("🚚 ข้อมูลรถขนส่ง")
-            st.info("ประเภทรถ: **กระบะตู้ทึบ** | จำกัดน้ำหนักบรรทุกสูงสุด: **9.5 ตัน**")
-            weight_col = "น้ำหนัก(ตัน)" 
+            # --- ส่วนการตั้งค่ารถขนส่ง (ที่แก้ไข) ---
+            st.subheader("🚛 การตั้งค่ารถขนส่ง")
+            st.markdown("ประเภทรถ: **กระบะตู้ทึบ**")
+            c1, c2 = st.columns(2)
+            with c1:
+                truck_count = st.number_input("จำนวนรถ (คัน)", min_value=1, value=1)
+            with c2:
+                max_weight = st.number_input("จำกัดน้ำหนักบรรทุกสูงสุดต่อคัน", min_value=0, value=935)
+            
+            weight_col = "น้ำหนัก" # **แก้ชื่อนี้ให้ตรงกับในไฟล์ Excel ของคุณ**
             if weight_col in edited_df.columns:
                 total_weight = edited_df[weight_col].sum()
-                if total_weight > 9.5:
-                    st.error(f"⚠️ คำเตือน: น้ำหนักรวมของสินค้า ({total_weight:.2f} ตัน) เกินกว่าที่รถรับได้ (9.5 ตัน)!")
+                capacity_limit = truck_count * max_weight
+                st.write(f"น้ำหนักรวมของสินค้า: {total_weight} | ขีดจำกัดรวม: {capacity_limit}")
+                
+                if total_weight > capacity_limit:
+                    st.error(f"⚠️ น้ำหนักเกิน! (เกินไป {total_weight - capacity_limit})")
                 else:
-                    st.success(f"✅ น้ำหนักรวมของสินค้า: {total_weight:.2f} ตัน (อยู่ในเกณฑ์)")
+                    st.success("✅ น้ำหนักบรรทุกอยู่ในเกณฑ์")
 
             st.subheader("🧠 3. เลือกวิธีจัดเรียงเส้นทาง")
             algo_choice = st.radio("รูปแบบ:", ("1. ลำดับตามไฟล์ดั้งเดิม", "2. Nearest Neighbor Heuristic", "3. Saving Heuristic"))
             
+            # ... (ส่วนการประมวลผลอัลกอริทึมคงเดิม)
             if "Nearest Neighbor" in algo_choice:
                 best_indices = nearest_neighbor_route(edited_df); best_indices.append(0); optimized_df = edited_df.iloc[best_indices].reset_index(drop=True)
             elif "Saving" in algo_choice:
@@ -100,10 +110,10 @@ if uploaded_file is not None:
             else:
                 optimized_df = pd.concat([edited_df, edited_df.iloc[[0]]], ignore_index=True)
 
+            # ... (ส่วนแผนที่และตารางคงเดิม)
             road_geometry, road_distances = get_osrm_route(optimized_df)
             current_datetime = datetime.datetime.combine(selected_date, start_time)
             schedule_data = []
-            
             for i in range(len(optimized_df)):
                 row = optimized_df.iloc[i]
                 if i > 0:
@@ -114,28 +124,10 @@ if uploaded_file is not None:
 
             st.subheader("📊 4. สรุปผลลัพธ์")
             st.dataframe(pd.DataFrame(schedule_data), use_container_width=True)
-            
-            # --- สร้างแผนที่ ---
             m = folium.Map(location=[optimized_df['Lat'].mean(), optimized_df['Lon'].mean()], zoom_start=14)
             if road_geometry: AntPath(road_geometry, color="blue", weight=5).add_to(m)
-            
-            # --- วงกลมเลขลำดับ สีดำ-ขาว ---
             for i in range(len(optimized_df)):
                 row = optimized_df.iloc[i]
-                folium.Marker(
-                    location=[row['Lat'], row['Lon']],
-                    icon=folium.DivIcon(html=f"""
-                        <div style="
-                            font-size: 10pt; font-weight: bold; color: white; 
-                            background-color: black; border-radius: 50%; 
-                            width: 25px; height: 25px; display: flex; 
-                            align-items: center; justify-content: center;
-                            border: 2px solid white;">
-                            {i}
-                        </div>
-                    """),
-                    popup=f"ลำดับที่ {i}: {row['ชื่อสถานที่']}"
-                ).add_to(m)
-                
+                folium.Marker(location=[row['Lat'], row['Lon']], icon=folium.DivIcon(html=f'<div style="font-size: 10pt; font-weight: bold; color: white; background-color: black; border-radius: 50%; width: 25px; height: 25px; display: flex; align-items: center; justify-content: center; border: 2px solid white;">{i}</div>'), popup=f"ลำดับที่ {i}: {row['ชื่อสถานที่']}").add_to(m)
             st_folium(m, width=1000, height=500)
     except Exception as e: st.error(f"เกิดข้อผิดพลาด: {e}")
