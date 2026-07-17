@@ -7,7 +7,7 @@ import math
 import datetime
 import requests
 
-# --- ส่วนประกาศฟังก์ชัน (ต้องวางไว้บนสุด) ---
+# --- ฟังก์ชันทั้งหมดต้องอยู่ส่วนบนสุด ---
 def get_osrm_route(df):
     try:
         coords = ";".join([f"{row['Lon']},{row['Lat']}" for _, row in df.iterrows()])
@@ -89,7 +89,6 @@ if uploaded_file is not None:
             else:
                 optimized_df = pd.concat([edited_df, edited_df.iloc[[0]]], ignore_index=True)
 
-            # คำนวณตารางเดินรถ
             road_geometry, road_distances = get_osrm_route(optimized_df)
             current_datetime = datetime.datetime.combine(selected_date, start_time)
             schedule_data = []
@@ -99,16 +98,23 @@ if uploaded_file is not None:
                 if i > 0:
                     dist = road_distances[i-1] if road_distances else calculate_distance(optimized_df.iloc[i-1]['Lat'], optimized_df.iloc[i-1]['Lon'], row['Lat'], row['Lon'])
                     current_datetime += datetime.timedelta(minutes=(dist/50)*60)
-                
-                # บวก Service Time (วินาที)
                 current_datetime += datetime.timedelta(seconds=service_time_input)
-                
                 schedule_data.append({"ลำดับ": i, "ชื่อสถานที่": row['ชื่อสถานที่'], "เวลาถึง (ETA)": current_datetime.strftime("%H:%M:%S")})
 
             st.subheader("📊 4. สรุปผลลัพธ์")
             st.dataframe(pd.DataFrame(schedule_data), use_container_width=True)
             
+            # --- สร้างแผนที่พร้อมจุดลำดับ ---
             m = folium.Map(location=[optimized_df['Lat'].mean(), optimized_df['Lon'].mean()], zoom_start=14)
             if road_geometry: AntPath(road_geometry, color="blue", weight=5).add_to(m)
+            
+            for i in range(len(optimized_df)):
+                row = optimized_df.iloc[i]
+                folium.Marker(
+                    location=[row['Lat'], row['Lon']],
+                    icon=folium.DivIcon(html=f"""<div style="font-size: 10pt; font-weight: bold; color: white; background-color: red; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;">{i}</div>"""),
+                    popup=f"จุดที่ {i}: {row['ชื่อสถานที่']}"
+                ).add_to(m)
+                
             st_folium(m, width=1000, height=500)
     except Exception as e: st.error(f"เกิดข้อผิดพลาด: {e}")
