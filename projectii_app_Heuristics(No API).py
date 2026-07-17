@@ -79,25 +79,25 @@ if uploaded_file is not None:
             st.subheader("📝 2. ข้อมูลสถานที่ต้นทางและลูกค้า")
             edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
 
-            # --- ส่วนการตั้งค่ารถขนส่ง (กำหนดขีดจำกัดที่ 9.5 ตัน) ---
+            # --- ส่วนการตั้งค่ารถขนส่ง ---
             st.subheader("🚛 การตั้งค่ารถขนส่ง")
             st.markdown("ประเภทรถ: **กระบะตู้ทึบ**")
             c1, c2 = st.columns(2)
             with c1:
                 truck_count = st.number_input("จำนวนรถ (คัน)", min_value=1, value=1)
             with c2:
-                max_weight = st.number_input("จำกัดน้ำหนักบรรทุกสูงสุดต่อคัน (ตัน)", min_value=0.0, value=9.5, step=0.1)
+                max_weight = st.number_input("จำกัดน้ำหนักบรรทุกสูงสุดต่อคัน (ตัน)", min_value=0.0, max_value=9.5, value=0.0, step=0.1)
             
-            weight_col = "น้ำหนัก(ตัน)" # แก้ชื่อคอลัมน์นี้ให้ตรงกับไฟล์ Excel ของคุณ
+            weight_col = "น้ำหนัก(ตัน)"
             if weight_col in edited_df.columns:
                 total_weight = edited_df[weight_col].sum()
                 capacity_limit = truck_count * max_weight
                 st.write(f"น้ำหนักรวมของสินค้า: {total_weight:.2f} ตัน | ขีดจำกัดรวม: {capacity_limit:.2f} ตัน")
                 
                 if total_weight > capacity_limit:
-                    st.error(f"⚠️ น้ำหนักเกินขีดจำกัด (สูงสุด 9.5 ตันต่อคัน)! (เกินไป {total_weight - capacity_limit:.2f} ตัน)")
+                    st.error(f"⚠️ น้ำหนักเกินขีดจำกัดที่คุณตั้งไว้! (เกินไป {total_weight - capacity_limit:.2f} ตัน)")
                 else:
-                    st.success("✅ น้ำหนักบรรทุกอยู่ในเกณฑ์มาตรฐาน")
+                    st.success("✅ น้ำหนักบรรทุกอยู่ในเกณฑ์")
 
             st.subheader("🧠 3. เลือกวิธีจัดเรียงเส้นทาง")
             algo_choice = st.radio("รูปแบบ:", ("1. ลำดับตามไฟล์ดั้งเดิม", "2. Nearest Neighbor Heuristic", "3. Saving Heuristic"))
