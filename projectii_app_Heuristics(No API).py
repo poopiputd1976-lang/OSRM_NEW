@@ -65,7 +65,7 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
-# --- อัลกอริทึมที่เหลืออยู่ ---
+# --- อัลกอริทึม ---
 def nearest_neighbor_route(df):
     unvisited = list(range(1, len(df))); route = [0]; current = 0
     while unvisited:
@@ -108,9 +108,13 @@ if uploaded_file is not None:
         if uploaded_file.name.endswith('.csv'): df = pd.read_csv(uploaded_file)
         else: df = pd.read_excel(uploaded_file)
         
-        # เลือกวันที่ผ่านปฏิทิน
-        st.subheader("📅 1. เลือกวันที่ปฏิบัติงาน")
-        selected_date = st.date_input("จิ้มเลือกวันที่ต้องการวิ่งงาน", datetime.date.today())
+        # เลือกวันที่และเวลา
+        st.subheader("📅 1. กำหนดการปฏิบัติงาน")
+        col1, col2 = st.columns(2)
+        with col1:
+            selected_date = st.date_input("วันที่ปฏิบัติงาน", datetime.date.today())
+        with col2:
+            start_time = st.time_input("เวลาเริ่มปฏิบัติงาน", datetime.time(8, 0))
         
         if 'ชื่อสถานที่' in df.columns and 'Lat' in df.columns and 'Lon' in df.columns:
             st.subheader("📝 2. ข้อมูลสถานที่ต้นทางและลูกค้า")
@@ -137,7 +141,7 @@ if uploaded_file is not None:
 
             # คำนวณตารางเดินรถ
             road_geometry, road_distances = get_osrm_route(optimized_df)
-            current_datetime = datetime.datetime.combine(selected_date, datetime.time(11, 0))
+            current_datetime = datetime.datetime.combine(selected_date, start_time)
             schedule_data = []
             
             for i in range(len(optimized_df)):
