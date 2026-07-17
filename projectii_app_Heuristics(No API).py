@@ -7,7 +7,17 @@ import math
 import datetime
 import requests
 
-# --- ฟังก์ชันคำนวณเส้นทาง ---
+# --- ฟังก์ชันจัดการราคาน้ำมัน ---
+def get_fuel_prices_by_brand(brand):
+    # ข้อมูลราคาน้ำมันจำลอง (คุณสามารถปรับเลขนี้ให้ตรงกับหน้าเว็บได้ตลอดเวลา)
+    data = {
+        "ปตท (PTT)": {"ดีเซล": 33.50, "แก๊สโซฮอล์ 95": 36.25, "E20": 34.14},
+        "บางจาก (BCP)": {"ดีเซล": 33.40, "แก๊สโซฮอล์ 95": 36.15, "E20": 34.04},
+        "PT": {"ดีเซล": 33.30, "แก๊สโซฮอล์ 95": 36.05, "E20": 33.94}
+    }
+    return data.get(brand, {})
+
+# --- ฟังก์ชันคำนวณและเส้นทาง ---
 def get_osrm_route(df):
     try:
         coords = ";".join([f"{row['Lon']},{row['Lat']}" for _, row in df.iterrows()])
@@ -62,12 +72,14 @@ def savings_route(df):
 st.set_page_config(page_title="Milk Run Optimization & Dashboard", layout="wide")
 st.title("🚚 SUT Daily Route Planing")
 
-# ส่วนกรอกราคาน้ำมัน (ให้ผู้ใช้กรอกเองเพื่อความแม่นยำ 100%)
-st.subheader("⛽ อัปเดตราคาน้ำมัน (กรอกข้อมูลล่าสุด)")
-col_p1, col_p2, col_p3 = st.columns(3)
-with col_p1: diesel_price = st.number_input("ราคาน้ำมันดีเซล (บาท/ลิตร)", value=33.50, step=0.01)
-with col_p2: gasohol_price = st.number_input("ราคาน้ำมันเบนซิน/แก๊สโซฮอล์ (บาท/ลิตร)", value=36.25, step=0.01)
-with col_p3: consumption_rate = st.number_input("อัตราสิ้นเปลือง (กม./ลิตร)", value=10.0, step=0.1)
+# ส่วนเลือกปั๊มน้ำมัน
+st.subheader("⛽ ตรวจสอบราคาน้ำมันล่าสุด")
+selected_brand = st.selectbox("เลือกปั๊มน้ำมัน:", ["ปตท (PTT)", "บางจาก (BCP)", "PT"])
+prices = get_fuel_prices_by_brand(selected_brand)
+
+cols = st.columns(len(prices))
+for idx, (fuel, price) in enumerate(prices.items()):
+    cols[idx].metric(label=fuel, value=f"{price} บาท")
 
 uploaded_file = st.file_uploader("📂 อัปโหลดไฟล์สถานที่ (Excel / CSV)", type=["xlsx", "csv"])
 
@@ -97,12 +109,6 @@ if uploaded_file is not None:
                 optimized_df = pd.concat([edited_df, edited_df.iloc[[0]]], ignore_index=True)
 
             road_geometry, road_distances = get_osrm_route(optimized_df)
-            
-            # คำนวณค่าน้ำมันรวม
-            total_dist = sum(road_distances) if road_distances else 0
-            fuel_cost = (total_dist / consumption_rate) * diesel_price
-            st.info(f"📍 ระยะทางรวมประมาณ {total_dist:.2f} กม. | 💰 ค่าน้ำมันโดยประมาณ {fuel_cost:.2f} บาท (คำนวณจากดีเซล)")
-
             current_datetime = datetime.datetime.combine(selected_date, start_time)
             schedule_data = []
             
@@ -117,7 +123,7 @@ if uploaded_file is not None:
             st.subheader("📊 4. สรุปผลลัพธ์")
             st.dataframe(pd.DataFrame(schedule_data), use_container_width=True)
             
-            # --- สร้างแผนที่ ---
+            # --- สร้างแผนที่ (วงกลมดำ-ตัวเลขขาว) ---
             m = folium.Map(location=[optimized_df['Lat'].mean(), optimized_df['Lon'].mean()], zoom_start=14)
             if road_geometry: AntPath(road_geometry, color="blue", weight=5).add_to(m)
             
