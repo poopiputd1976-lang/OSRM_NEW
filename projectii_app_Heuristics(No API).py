@@ -79,6 +79,17 @@ if uploaded_file is not None:
             st.subheader("📝 2. ข้อมูลสถานที่ต้นทางและลูกค้า")
             edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
 
+            # ส่วนเพิ่มเติม: แสดงประเภทรถและตรวจสอบน้ำหนัก
+            st.subheader("🚚 ข้อมูลรถขนส่ง")
+            st.info("ประเภทรถ: **กระบะตู้ทึบ** | จำกัดน้ำหนักบรรทุกสูงสุด: **9.5 ตัน**")
+            weight_col = "น้ำหนัก(ตัน)" 
+            if weight_col in edited_df.columns:
+                total_weight = edited_df[weight_col].sum()
+                if total_weight > 9.5:
+                    st.error(f"⚠️ คำเตือน: น้ำหนักรวมของสินค้า ({total_weight:.2f} ตัน) เกินกว่าที่รถรับได้ (9.5 ตัน)!")
+                else:
+                    st.success(f"✅ น้ำหนักรวมของสินค้า: {total_weight:.2f} ตัน (อยู่ในเกณฑ์)")
+
             st.subheader("🧠 3. เลือกวิธีจัดเรียงเส้นทาง")
             algo_choice = st.radio("รูปแบบ:", ("1. ลำดับตามไฟล์ดั้งเดิม", "2. Nearest Neighbor Heuristic", "3. Saving Heuristic"))
             
