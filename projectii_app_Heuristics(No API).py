@@ -86,7 +86,6 @@ if uploaded_file is not None:
             with c1:
                 truck_count = st.number_input("จำนวนรถ (คัน)", min_value=1, value=1)
             with c2:
-                # แก้ไขให้รับค่าได้แต่เช็ค Logic ด้านล่าง
                 max_weight = st.number_input("จำกัดน้ำหนักบรรทุกสูงสุดต่อคัน (ตัน)", min_value=0.0, step=0.1, value=0.0)
             
             # --- ตรวจสอบ Logic น้ำหนักเกินเพดาน 9.5 ตัน ---
