@@ -7,7 +7,7 @@ import math
 import datetime
 import requests
 
-# --- ฟังก์ชันดึงราคาน้ำมัน (Dynamic API ที่แกะข้อมูลแล้ว) ---
+# --- ฟังก์ชันดึงราคาน้ำมัน ---
 def get_fuel_prices_api():
     url = "https://api.chnwt.dev/thai-oil-api/latest"
     try:
@@ -73,30 +73,31 @@ def savings_route(df):
 st.set_page_config(page_title="Milk Run Optimization & Dashboard", layout="wide")
 st.title("🚚 SUT Daily Route Planning")
 
-# ส่วนแสดงราคาน้ำมัน Dynamic ที่แกะ JSON เรียบร้อยแล้ว
+# ส่วนแสดงราคาน้ำมัน
 st.subheader("⛽ ราคาน้ำมันอัปเดตล่าสุด (Real-time)")
 fuel_data = get_fuel_prices_api()
 
-if fuel_data and isinstance(fuel_data, dict):
-    price_list = []
-    for brand, fuels in fuel_data.items():
-        if isinstance(fuels, dict):
-            row = {"ปั๊มน้ำมัน": brand.upper()}
-            for fuel_name, details in fuels.items():
-                if isinstance(details, dict) and "price" in details:
-                    # ดึงเฉพาะราคามาแสดง
-                    row[fuel_name.upper()] = details["price"] if details["price"] else "-"
-            price_list.append(row)
-    
-    if price_list:
-        df_prices = pd.DataFrame(price_list)
-        st.dataframe(df_prices.set_index("ปั๊มน้ำมัน"), use_container_width=True)
-    else:
-        st.warning("ไม่พบข้อมูลราคาน้ำมันในขณะนี้")
+if fuel_data:
+    try:
+        rows = []
+        for brand, fuels in fuel_data.items():
+            if isinstance(fuels, dict):
+                record = {"ปั๊มน้ำมัน": brand.upper()}
+                for fuel_name, info in fuels.items():
+                    val = info.get("price") if isinstance(info, dict) else info
+                    record[fuel_name.upper()] = val if val else "-"
+                rows.append(record)
+        
+        if rows:
+            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+        else:
+            st.write("พบข้อมูลแต่ไม่สามารถประมวลผลตารางได้")
+    except Exception as e:
+        st.error(f"เกิดข้อผิดพลาด: {e}")
 else:
     st.error("ไม่สามารถเชื่อมต่อ API ราคาน้ำมันได้")
 
-# --- ส่วนการคำนวณและแผนที่ ---
+# --- ส่วนอัปโหลดและคำนวณ ---
 uploaded_file = st.file_uploader("📂 อัปโหลดไฟล์สถานที่ (Excel / CSV)", type=["xlsx", "csv"])
 
 if uploaded_file is not None:
@@ -139,20 +140,11 @@ if uploaded_file is not None:
             st.subheader("📊 4. สรุปผลลัพธ์")
             st.dataframe(pd.DataFrame(schedule_data), use_container_width=True)
             
-            # --- สร้างแผนที่ ---
+            # --- แผนที่ ---
             m = folium.Map(location=[optimized_df['Lat'].mean(), optimized_df['Lon'].mean()], zoom_start=14)
             if road_geometry: AntPath(road_geometry, color="blue", weight=5).add_to(m)
-            
             for i in range(len(optimized_df)):
                 row = optimized_df.iloc[i]
-                folium.Marker(
-                    location=[row['Lat'], row['Lon']],
-                    icon=folium.DivIcon(html=f"""
-                        <div style="font-size: 10pt; font-weight: bold; color: white; background-color: black; border-radius: 50%; width: 25px; height: 25px; display: flex; align-items: center; justify-content: center; border: 2px solid white;">
-                            {i}
-                        </div>"""),
-                    popup=f"ลำดับที่ {i}: {row['ชื่อสถานที่']}"
-                ).add_to(m)
-                
+                folium.Marker([row['Lat'], row['Lon']], popup=f"{i}: {row['ชื่อสถานที่']}").add_to(m)
             st_folium(m, width=1000, height=500)
     except Exception as e: st.error(f"เกิดข้อผิดพลาด: {e}")
