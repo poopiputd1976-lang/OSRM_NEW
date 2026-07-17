@@ -1,4 +1,5 @@
 import datetime
+import json
 import math
 
 import folium
@@ -83,6 +84,74 @@ def get_osrm_route(route_df):
 
     except (requests.RequestException, KeyError, IndexError, ValueError):
         return None, None, None
+
+
+@st.cache_data(ttl=1800)
+def get_latest_fuel_prices():
+    """
+    ดึงราคาน้ำมันล่าสุดจาก Bangchak Web Service
+
+    คืนค่า:
+        fuel_data = {
+            "prices": {ชื่อชนิดน้ำมัน: ราคา},
+            "price_date": วันที่ประกาศ,
+            "price_time": เวลาประกาศ,
+            "effective_note": หมายเหตุ,
+            "source": แหล่งข้อมูล,
+        }
+        error_message = ข้อผิดพลาด หรือ None
+    """
+    api_url = "https://oil-price.bangchak.co.th/ApiOilPrice2/th"
+
+    try:
+        response = requests.get(api_url, timeout=15)
+        response.raise_for_status()
+        raw_data = response.json()
+
+        if not raw_data:
+            raise ValueError("API ไม่ส่งข้อมูลราคาน้ำมันกลับมา")
+
+        main_data = raw_data[0]
+        oil_list_raw = main_data.get("OilList", [])
+
+        if isinstance(oil_list_raw, str):
+            oil_list = json.loads(oil_list_raw)
+        elif isinstance(oil_list_raw, list):
+            oil_list = oil_list_raw
+        else:
+            raise ValueError("รูปแบบ OilList ไม่ถูกต้อง")
+
+        fuel_prices = {}
+
+        for oil in oil_list:
+            fuel_name = str(oil.get("OilName", "")).strip()
+            price_today = oil.get("PriceToday")
+
+            if fuel_name and price_today not in (None, ""):
+                try:
+                    fuel_prices[fuel_name] = float(price_today)
+                except (TypeError, ValueError):
+                    continue
+
+        if not fuel_prices:
+            raise ValueError("ไม่พบราคาน้ำมันที่ใช้งานได้จาก API")
+
+        return {
+            "prices": fuel_prices,
+            "price_date": main_data.get("OilPriceDate", "-"),
+            "price_time": main_data.get("OilPriceTime", "-"),
+            "effective_note": main_data.get("OilRemark2", ""),
+            "source": "Bangchak",
+        }, None
+
+    except (
+        requests.RequestException,
+        ValueError,
+        KeyError,
+        TypeError,
+        json.JSONDecodeError,
+    ) as error:
+        return None, str(error)
 
 
 # =========================================================
@@ -687,7 +756,94 @@ if uploaded_file is not None:
             f"{total_capacity - total_weight:.3f} ตัน",
         )
 
-        st.subheader("🧠 5. เลือกวิธีจัดลำดับเส้นทาง")
+        st.subheader("⛽ 5. ราคาน้ำมันและอัตราสิ้นเปลือง")
+
+        fuel_data, fuel_error = get_latest_fuel_prices()
+        fuel_col1, fuel_col2, fuel_col3 = st.columns(3)
+
+        if fuel_data and fuel_data["prices"]:
+            available_fuels = list(fuel_data["prices"].keys())
+            default_fuel_index = 0
+
+            for index, fuel_name in enumerate(available_fuels):
+                if "ดีเซล" in fuel_name:
+                    default_fuel_index = index
+                    break
+
+            with fuel_col1:
+                selected_fuel = st.selectbox(
+                    "ชนิดน้ำมัน",
+                    available_fuels,
+                    index=default_fuel_index,
+                )
+
+            latest_fuel_price = float(
+                fuel_data["prices"][selected_fuel]
+            )
+
+            with fuel_col2:
+                fuel_price = st.number_input(
+                    "ราคาน้ำมันที่ใช้คำนวณ (บาท/ลิตร)",
+                    min_value=0.0,
+                    value=latest_fuel_price,
+                    step=0.01,
+                    format="%.2f",
+                )
+
+            with fuel_col3:
+                fuel_efficiency = st.number_input(
+                    "อัตราสิ้นเปลืองรถ (กม./ลิตร)",
+                    min_value=0.1,
+                    value=10.0,
+                    step=0.1,
+                    format="%.1f",
+                )
+
+            st.success(
+                f"✅ ราคาล่าสุดจาก {fuel_data['source']}: "
+                f"{selected_fuel} = {latest_fuel_price:.2f} บาท/ลิตร"
+            )
+
+            st.caption(
+                f"ประกาศวันที่ {fuel_data['price_date']} "
+                f"เวลา {fuel_data['price_time']} "
+                f"{fuel_data['effective_note']}"
+            )
+
+        else:
+            st.warning(
+                "⚠️ ไม่สามารถดึงราคาน้ำมันออนไลน์ได้ "
+                "ระบบจะใช้ราคาที่ผู้ใช้กรอกเอง"
+            )
+
+            if fuel_error:
+                st.caption(f"รายละเอียด: {fuel_error}")
+
+            with fuel_col1:
+                selected_fuel = st.selectbox(
+                    "ชนิดน้ำมัน",
+                    ["ดีเซล", "เบนซิน", "แก๊สโซฮอล์"],
+                )
+
+            with fuel_col2:
+                fuel_price = st.number_input(
+                    "ราคาน้ำมันสำรอง (บาท/ลิตร)",
+                    min_value=0.0,
+                    value=30.00,
+                    step=0.01,
+                    format="%.2f",
+                )
+
+            with fuel_col3:
+                fuel_efficiency = st.number_input(
+                    "อัตราสิ้นเปลืองรถ (กม./ลิตร)",
+                    min_value=0.1,
+                    value=10.0,
+                    step=0.1,
+                    format="%.1f",
+                )
+
+        st.subheader("🧠 6. เลือกวิธีจัดลำดับเส้นทาง")
 
         algorithm_choice = st.radio(
             "รูปแบบ:",
@@ -744,6 +900,8 @@ if uploaded_file is not None:
         all_schedule_rows = []
         assignment_summary_rows = []
         route_summary_rows = []
+        total_fuel_liters_all_vehicles = 0.0
+        total_fuel_cost_all_vehicles = 0.0
 
         for vehicle_index, customer_indices in enumerate(
             vehicle_assignments
@@ -792,6 +950,16 @@ if uploaded_file is not None:
                 for row in vehicle_schedule
             )
 
+            estimated_fuel_liters = (
+                total_route_distance / float(fuel_efficiency)
+            )
+            estimated_fuel_cost = (
+                estimated_fuel_liters * float(fuel_price)
+            )
+
+            total_fuel_liters_all_vehicles += estimated_fuel_liters
+            total_fuel_cost_all_vehicles += estimated_fuel_cost
+
             route_summary_rows.append(
                 {
                     "รถคันที่": vehicle_number,
@@ -807,6 +975,23 @@ if uploaded_file is not None:
                     ),
                     "ระยะทางรวมโดยประมาณ (กม.)": round(
                         total_route_distance,
+                        2,
+                    ),
+                    "ชนิดน้ำมัน": selected_fuel,
+                    "อัตราสิ้นเปลือง (กม./ลิตร)": round(
+                        float(fuel_efficiency),
+                        2,
+                    ),
+                    "น้ำมันที่ใช้โดยประมาณ (ลิตร)": round(
+                        estimated_fuel_liters,
+                        2,
+                    ),
+                    "ราคาน้ำมัน (บาท/ลิตร)": round(
+                        float(fuel_price),
+                        2,
+                    ),
+                    "ต้นทุนน้ำมันโดยประมาณ (บาท)": round(
+                        estimated_fuel_cost,
                         2,
                     ),
                 }
@@ -901,11 +1086,25 @@ if uploaded_file is not None:
                     ),
                 ).add_to(route_map)
 
-        st.subheader("📊 6. สรุปการใช้รถ")
+        st.subheader("📊 7. สรุปการใช้รถและต้นทุนน้ำมัน")
 
         st.dataframe(
             pd.DataFrame(route_summary_rows),
             use_container_width=True,
+        )
+
+        fuel_metric_col1, fuel_metric_col2, fuel_metric_col3 = st.columns(3)
+        fuel_metric_col1.metric(
+            "น้ำมันรวมทุกคัน",
+            f"{total_fuel_liters_all_vehicles:.2f} ลิตร",
+        )
+        fuel_metric_col2.metric(
+            "ต้นทุนน้ำมันรวม",
+            f"{total_fuel_cost_all_vehicles:,.2f} บาท",
+        )
+        fuel_metric_col3.metric(
+            "ราคาที่ใช้คำนวณ",
+            f"{float(fuel_price):.2f} บาท/ลิตร",
         )
 
         if assignment_summary_rows:
@@ -916,14 +1115,14 @@ if uploaded_file is not None:
                 use_container_width=True,
             )
 
-        st.subheader("🕒 7. ตารางเส้นทางและ ETA")
+        st.subheader("🕒 8. ตารางเส้นทางและ ETA")
 
         st.dataframe(
             pd.DataFrame(all_schedule_rows),
             use_container_width=True,
         )
 
-        st.subheader("🗺️ 8. แผนที่เส้นทางแยกตามรถ")
+        st.subheader("🗺️ 9. แผนที่เส้นทางแยกตามรถ")
 
         st_folium(
             route_map,
